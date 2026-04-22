@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Navegador AR Universitario</title>
+    
+    <!-- Tailwind CSS para la Interfaz -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- A-Frame (Motor 3D y WebXR) -->
+    <script src="https://aframe.io/releases/1.4.2/aframe.min.js"></script>
+
+    <style>
+        /* Asegurar que la UI se superponga correctamente a la cámara de WebXR */
+        #ui-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 999;
+            pointer-events: none; /* Deja pasar los toques al canvas 3D cuando sea necesario */
+        }
+        .pointer-events-auto {
+            pointer-events: auto;
+        }
+    </style>
+</head>
+<body class="bg-gray-900 m-0 overflow-hidden font-sans">
+
+    <!-- INTERFAZ DE USUARIO (2D Overlay) -->
+    <div id="ui-overlay" class="flex flex-col justify-between p-4">
+        
+        <!-- Header / Destino -->
+        <div class="pointer-events-auto bg-white/90 backdrop-blur-sm p-4 rounded-2xl shadow-lg text-center transform transition-transform duration-300" id="header-card">
+            <h1 class="text-xl font-bold text-blue-800">Navegador del Campus</h1>
+            <p class="text-sm text-gray-600 mt-1" id="destino-text">Cargando destino...</p>
+        </div>
+
+        <!-- Alerta de iOS -->
+        <div id="ios-warning" class="hidden pointer-events-auto mt-4 bg-yellow-100 border-l-4 border-yellow-500 text-yellow-700 p-4 rounded shadow-md">
+            <p class="font-bold">Aviso para iPhone/iOS</p>
+            <p class="text-sm">WebXR funciona mejor en Chrome para Android. Si la cámara no abre, sugerimos usar Mozilla WebXR Viewer o ver el mapa 2D.</p>
+        </div>
+
+        <!-- Mensajes de Instrucción Dinámicos -->
+        <div class="pointer-events-auto mb-8 mx-auto w-full max-w-sm">
+            <div id="instruction-box" class="bg-blue-600 text-white p-4 rounded-xl shadow-xl text-center animate-pulse">
+                <p class="font-bold text-lg" id="instruction-text">1. Toca el botón "AR" abajo a la derecha</p>
+            </div>
+            
+            <button id="btn-recalibrar" class="hidden mt-4 w-full bg-red-500 hover:bg-red-600 text-white font-bold py-3 px-4 rounded-xl shadow-lg transition-colors">
+                📍 Recalibrar (Perdí la ruta)
+            </button>
+        </div>
+    </div>
+
+    <!-- ESCENA A-FRAME (WebXR) -->
+    <!-- webxr="optionalFeatures: dom-overlay; overlayElement: #ui-overlay" permite que la UI HTML se vea en modo AR -->
+    <a-scene 
+        webxr="requiredFeatures: hit-test, local-floor; optionalFeatures: dom-overlay; overlayElement: #ui-overlay"
+        renderer="colorManagement: true;"
+        vr-mode-ui="enterVRButton: #myEnterVRButton"
+        shadow="type: pcfsoft">
+
+        <a-assets>
+            <!-- Aquí podríamos cargar modelos 3D (GLTF), usaremos primitivas por ahora para mayor velocidad -->
+        </a-assets>
+
+        <!-- Cámara -->
+        <a-entity camera position="0 1.6 0"></a-entity>
+
+        <!-- Retícula (El círculo que aparece en el suelo cuando lo detecta) -->
+        <a-entity id="reticle" 
+                  geometry="primitive: ring; radiusInner: 0.15; radiusOuter: 0.2" 
+                  material="color: #00ff00; shader: flat; opacity: 0.8" 
+                  rotation="-90 0 0" 
+                  ar-hit-test
+                  visible="false">
+        </a-entity>
+
+        <!-- Contenedor de la Ruta (Se moverá al "Punto Cero" detectado) -->
+        <a-entity id="ruta-container" visible="false">
+            <!-- Los elementos de la ruta se generarán aquí mediante JavaScript -->
+        </a-entity>
+
+        <!-- Luces -->
+        <a-light type="ambient" color="#ffffff" intensity="0.6"></a-light>
+        <a-light type="directional" color="#ffffff" intensity="0.8" position="-1 2 1"></a-light>
+
+    </a-scene>
+
+    <!-- LÓGICA DE LA APLICACIÓN -->
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const uiDestinoText = document.getElementById('destino-text');
+            const instructionText = document.getElementById('instruction-text');
+            const instructionBox = document.getElementById('instruction-box');
+            const iosWarning = document.getElementById('ios-warning');
+            const btnRecalibrar = document.getElementById('btn-recalibrar');
+            const sceneEl = document.querySelector('a-scene');
+            const reticle = document.getElementById('reticle');
+            const rutaContainer = document.getElementById('ruta-container');
+
+            let destinoActual = 'indefinido';
+            let rutaAnclada = false;
+
+            // FASE 2: Base de datos de Rutas (Coordenadas X, Z en metros)
+            // Cada punto es una flecha. X = izquierda/derecha, Z = adelante/atrás (negativo es adelante)
+            const rutasDB = {
+                'mi_ruta': [
+                    // 1. Camina 105 metros hacia adelante
+                    {x: 0, z: -105, color: '#9333EA'}, 
+                    
+                    // 2. Camina a la izquierda 1.5 metros
+                    {x: -1.5, z: -105, color: '#9333EA'},
+                    
+                    // 3. Camina hacia la derecha 20 metros (retomando hacia adelante)
+                    {x: -1.5, z: -125, color: '#9333EA'},
+                    
+                    // 4. Camina hacia la izquierda 62 metros
+                    {x: -63.5, z: -125, color: '#9333EA'},
+                    
+                    // 5. Camina hacia la derecha 26 metros (retomando hacia adelante)
+                    {x: -63.5, z: -151, color: '#9333EA'},
+                    
+                    // 6. Continua caminando hacia adelante 49 metros
+                    {x: -63.5, z: -200, color: '#9333EA'},
+                    
+                    // 7. Camina a la derecha 10.5 metros y llegaste
+                    {x: -53.0, z: -200, color: '#EF4444'} 
+                ],
+                'biblioteca': [
+                    {x: 0, z: -1, color: '#3B82F6'},   // Paso 1: 1m adelante
+                    {x: 0, z: -3, color: '#3B82F6'},   // Paso 2: 3m adelante
+                    {x: 0, z: -5, color: '#3B82F6'},   // Paso 3: 5m adelante
+                    {x: 1, z: -5.5, color: '#10B981'}, // Giro derecha
+                    {x: 3, z: -5.5, color: '#10B981'}  // Destino
+                ],
+                'cafeteria': [
+                    {x: 0, z: -2, color: '#F59E0B'},   // 2m adelante
+                    {x: -2, z: -2, color: '#F59E0B'},  // Giro izquierda
+                    {x: -4, z: -2, color: '#F59E0B'}   // Destino
+                ]
+            };
+
+            // FASE 3 & 4: Lógica de Inicialización
+            function init() {
+                // 1. Detectar iOS
+                const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+                if (isIOS) {
+                    iosWarning.classList.remove('hidden');
+                }
+
+                // 2. Leer URL Parameters (?destino=biblioteca)
+                const urlParams = new URLSearchParams(window.location.search);
+                const destinoParam = urlParams.get('destino');
+
+                if (destinoParam && rutasDB[destinoParam]) {
+                    destinoActual = destinoParam;
+                    uiDestinoText.innerHTML = `Navegando hacia: <strong>${destinoActual.toUpperCase()}</strong>`;
+                    generarRutaVirtual(rutasDB[destinoActual]);
+                } else {
+                    uiDestinoText.innerHTML = `<span class="text-red-500">Error: Destino no válido o no especificado.</span>`;
+                    instructionText.innerText = "Por favor, escanea un código QR oficial.";
+                    return;
+                }
+
+                // 3. Eventos de WebXR
+                sceneEl.addEventListener('enter-vr', () => {
+                    if (sceneEl.is('ar-mode')) {
+                        instructionText.innerText = "2. Apunta al piso y muévete lentamente para escanear el suelo.";
+                        instructionBox.classList.replace('bg-blue-600', 'bg-yellow-500');
+                    }
+                });
+
+                // 4. Hit-Test (Detectar el suelo)
+                // A-Frame muestra el reticle automáticamente cuando detecta el suelo.
+                reticle.addEventListener('targetFound', () => {
+                    if (!rutaAnclada) {
+                        instructionText.innerText = "3. ¡Suelo detectado! Toca la pantalla para fijar tu punto de inicio.";
+                        instructionBox.classList.replace('bg-yellow-500', 'bg-green-500');
+                    }
+                });
+
+                reticle.addEventListener('targetLost', () => {
+                    if (!rutaAnclada) {
+                        instructionText.innerText = "Buscando el suelo... muévete despacio.";
+                        instructionBox.classList.replace('bg-green-500', 'bg-yellow-500');
+                    }
+                });
+
+                // 5. Anclar la ruta al tocar la pantalla (Select event from WebXR)
+                sceneEl.addEventListener('select', (e) => {
+                    if (!rutaAnclada && reticle.components['ar-hit-test'].hasFoundTarget) {
+                        anclarRuta();
+                    }
+                });
+
+                // Evento para botón de recalibrar
+                btnRecalibrar.addEventListener('click', () => {
+                    rutaAnclada = false;
+                    rutaContainer.setAttribute('visible', 'false');
+                    btnRecalibrar.classList.add('hidden');
+                    instructionBox.classList.remove('hidden');
+                    instructionText.innerText = "Apunta al piso para volver a escanear.";
+                    instructionBox.classList.replace('bg-blue-600', 'bg-yellow-500');
+                });
+            }
+
+            // --- NUEVA LÓGICA: Generar puntos intermedios automáticamente ---
+            function generarRutaInterpolada(coordenadas, intervalo = 5) {
+                let rutaCompleta = [];
+                for (let i = 0; i < coordenadas.length - 1; i++) {
+                    const A = coordenadas[i];
+                    const B = coordenadas[i + 1];
+                    
+                    // Añadir el punto base (esquina o inicio)
+                    rutaCompleta.push(A);
+
+                    const dx = B.x - A.x;
+                    const dz = B.z - A.z;
+                    const distancia = Math.sqrt(dx * dx + dz * dz);
+                    
+                    // Calcular cuántas flechas caben en este segmento recto
+                    const numIntermedios = Math.floor(distancia / intervalo);
+
+                    for (let j = 1; j <= numIntermedios; j++) {
+                        const distanciaActual = j * intervalo;
+                        // Si la flecha intermedia está muy cerca de la siguiente esquina (menos de 1 metro), la saltamos para evitar que se encimen
+                        if (distanciaActual >= distancia - 1) continue; 
+
+                        const t = distanciaActual / distancia;
+                        rutaCompleta.push({
+                            x: A.x + (dx * t),
+                            z: A.z + (dz * t),
+                            color: A.color // Hereda el color del tramo
+                        });
+                    }
+                }
+                // Añadir el punto final (Destino)
+                if (coordenadas.length > 0) {
+                    rutaCompleta.push(coordenadas[coordenadas.length - 1]);
+                }
+                return rutaCompleta;
+            }
+
+            // Función para dibujar los elementos 3D de la ruta
+            function generarRutaVirtual(coordenadasOriginales) {
+                // Limpiar ruta anterior
+                rutaContainer.innerHTML = '';
+
+                // PASO CLAVE: Interpolar la ruta para que haya flechas cada 5 metros
+                const coordenadas = generarRutaInterpolada(coordenadasOriginales, 5);
+
+                coordenadas.forEach((punto, index) => {
+                    // Crear un cono (flecha) para cada punto
+                    const flecha = document.createElement('a-cone');
+                    flecha.setAttribute('position', `${punto.x} 0.05 ${punto.z}`); // Ligeramente elevado del suelo (0.05m)
+                    flecha.setAttribute('radius-bottom', '0.15');
+                    flecha.setAttribute('radius-top', '0');
+                    flecha.setAttribute('height', '0.4');
+                    flecha.setAttribute('color', punto.color);
+                    flecha.setAttribute('opacity', '0.8');
+                    
+                    // Lógica simple para rotar la flecha hacia el SIGUIENTE punto
+                    if (index < coordenadas.length - 1) {
+                        const sig = coordenadas[index + 1];
+                        const angulo = Math.atan2(punto.x - sig.x, punto.z - sig.z) * (180 / Math.PI);
+                        flecha.setAttribute('rotation', `-90 ${angulo} 0`); // -90 en X para que esté acostada en el suelo
+                    } else {
+                        // Último punto (Destino), lo hacemos rotar sobre sí mismo
+                        flecha.setAttribute('rotation', '-90 0 0');
+                        flecha.setAttribute('animation', 'property: rotation; to: -90 360 0; loop: true; dur: 2000; easing: linear');
+                        flecha.setAttribute('color', '#EF4444'); // Rojo para el destino
+                        flecha.setAttribute('scale', '1.5 1.5 1.5');
+                    }
+
+                    // Animación de flotación suave
+                    flecha.setAttribute('animation__float', `property: position; dir: alternate; dur: 1500; easing: easeInOutSine; loop: true; to: ${punto.x} 0.15 ${punto.z}`);
+
+                    rutaContainer.appendChild(flecha);
+                });
+            }
+
+            // Función para fijar la ruta en el mundo real
+            function anclarRuta() {
+                // Obtener la posición actual de la retícula en el mundo real
+                const position = reticle.getAttribute('position');
+                const rotation = reticle.getAttribute('rotation');
+
+                // Mover el contenedor de la ruta a esa posición física
+                rutaContainer.setAttribute('position', position);
+                
+                // Nota: Idealmente alinearíamos la rotación Y con la brújula del teléfono, 
+                // pero por ahora asumimos que el usuario mira al frente (como dice el cartel).
+                
+                // Mostrar la ruta
+                rutaContainer.setAttribute('visible', 'true');
+                rutaAnclada = true;
+
+                // Actualizar UI
+                instructionBox.classList.add('hidden');
+                btnRecalibrar.classList.remove('hidden');
+                
+                // Ocultar retícula
+                reticle.setAttribute('visible', 'false');
+            }
+
+            // Ejecutar inicialización
+            init();
+        });
+    </script>
+</body>
+</html>
