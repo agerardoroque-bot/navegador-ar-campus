@@ -13,7 +13,6 @@
         .ar-ui { position: fixed; z-index: 10; pointer-events: none; }
         .interactive { pointer-events: auto; }
         #instructions { background: rgba(0, 0, 0, 0.85); border-radius: 1rem; border: 1px solid rgba(255,255,255,0.1); backdrop-filter: blur(4px); }
-        /* Botón de inicio para preview sin dispositivo AR */
         #simular-btn { display: none; }
         @media (min-width: 1024px) { #simular-btn { display: block; } }
     </style>
@@ -36,7 +35,6 @@
         <!-- Instrucciones Centrales -->
         <div id="instructions" class="p-6 w-full max-w-md mb-12 shadow-2xl">
             <div class="flex justify-center mb-4">
-                <!-- Icono de teléfono escaneando -->
                 <svg id="scan-icon" class="w-12 h-12 text-blue-400 animate-pulse" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z"></path></svg>
             </div>
             <p id="instruction-text" class="mb-6 text-lg font-medium text-gray-200">Apunta la cámara al piso frente al cartel.</p>
@@ -45,7 +43,7 @@
                 INICIAR NAVEGACIÓN
             </button>
             
-            <!-- Botón de simulación (solo visible en PC para pruebas) -->
+            <!-- Botón de simulación -->
             <button id="simular-btn" class="interactive w-full mt-4 bg-gray-700 hover:bg-gray-600 text-white font-bold py-2 px-8 rounded-xl text-sm">
                 (PC) Simular AR
             </button>
@@ -65,14 +63,13 @@
         renderer="colorManagement: true; antialias: true;">
         
         <a-assets>
-            <!-- Textura simple para el camino -->
             <img id="glow" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==" crossorigin="anonymous">
         </a-assets>
 
         <!-- Cámara -->
         <a-entity camera position="0 1.6 0"></a-entity>
 
-        <!-- Retícula de selección (Hit Test) - Muestra dónde se pondrá el punto 0 -->
+        <!-- Retícula de selección -->
         <a-entity id="reticle" visible="false">
             <a-ring color="#3b82f6" radius-inner="0.1" radius-outer="0.15" rotation="-90 0 0" material="shader: flat; opacity: 0.8;">
                 <a-circle color="#60a5fa" radius="0.05" animation="property: scale; to: 1.5 1.5 1.5; dir: alternate; dur: 800; loop: true"></a-circle>
@@ -82,7 +79,7 @@
         <!-- Contenedor de la Ruta -->
         <a-entity id="route-container"></a-entity>
 
-        <!-- Entorno simulado (solo visible en PC si no hay AR) -->
+        <!-- Entorno simulado -->
         <a-entity id="entorno-simulado" visible="false">
             <a-plane position="0 0 0" rotation="-90 0 0" width="30" height="30" color="#2d3748"></a-plane>
             <a-grid position="0 0.01 0"></a-grid>
@@ -92,35 +89,30 @@
 
     <script>
         // =====================================================================
-        // --- AÑADE TUS MEDIDAS AQUÍ --- (FASE 2)
+        // --- AÑADE TUS MEDIDAS AQUÍ ---
         // =====================================================================
-        //
-        // GUÍA DE COORDENADAS (Basado en la cámara mirando hacia adelante desde el Punto Cero):
-        // X = Izquierda (negativo) / Derecha (positivo)
-        // Y = Altura (lo ignoramos, siempre será cerca de 0)
-        // Z = Adelante (negativo) / Atrás (positivo)  <-- IMPORTANTE: Adelante es negativo en WebXR
-        // 1 unidad = 1 metro en la vida real.
-        //
-        // EJEMPLO: Caminar 5 metros recto, luego girar a la derecha y caminar 3 metros.
-        // Punto 1: {x: 0, z: 0}   (El cartel)
-        // Punto 2: {x: 0, z: -5}  (5m hacia adelante)
-        // Punto 3: {x: 3, z: -5}  (Mantenemos el z en -5, y nos movemos 3m en X positivo = derecha)
+        // AHORA SOPORTA ALTURA (y). 
+        // Si hay una rampa o escaleras que suben 1 metro, pones y: 1
+        // Si bajan 1 metro, pones y: -1
+        // Si es plano, puedes omitir la 'y' o poner y: 0
 
         const RUTAS = {
             'ruta_principal': [
-                { x: 0, z: 0 },          // 0. Punto Cero
-                { x: 0, z: -105 },       // 1. Adelante 105m
-                { x: -1.5, z: -105 },    // 2. Izquierda 1.5m
-                { x: -1.5, z: -125 },    // 3. Derecha 20m (avanzando más hacia el fondo)
-                { x: -63.5, z: -125 },   // 4. Izquierda 62m
-                { x: -63.5, z: -151 },   // 5. Derecha 26m
-                { x: -63.5, z: -200 },   // 6. Continúa adelante 49m (151 + 49 = 200m totales en este eje)
-                { x: -53.0, z: -200 }    // 7. Derecha 10.5m (Llegaste a tu destino)
+                { x: 0, y: 0, z: 0 },          
+                { x: 0, y: 0, z: -105 },       
+                { x: -1.5, y: 0, z: -105 },    
+                { x: -1.5, y: -0.5, z: -125 }, // Ejemplo: En este tramo el terreno bajó medio metro (y: -0.5)
+                { x: -63.5, y: -0.5, z: -125 },   
+                { x: -63.5, y: 0, z: -151 },   // Volvió a subir (y: 0)
+                // Ejemplo de giro irregular (diagonales automáticas): 
+                // El siguiente punto no es recto, cruzamos la plaza en diagonal. 
+                // El código calculará el ángulo exacto para conectar el punto anterior con este.
+                { x: -50.0, y: 0, z: -180 },   
+                { x: -53.0, y: 0, z: -200 }    
             ]
         };
         // =====================================================================
 
-        // Variables de UI y A-Frame
         const scene = document.querySelector('a-scene');
         const reticle = document.getElementById('reticle');
         const routeContainer = document.getElementById('route-container');
@@ -136,25 +128,18 @@
         let localSpace = null;
         let routePlaced = false;
 
-        // Detectar iOS para advertencia
         if (/iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream) {
             document.getElementById('ios-warning').classList.remove('hidden');
         }
 
-        // Obtener destino de la URL (Ejemplo: misitio.com/?destino=mi_ruta_nueva)
         const urlParams = new URLSearchParams(window.location.search);
-        // Si no hay parámetro en la URL, usa 'ruta_principal' por defecto
         const destino = urlParams.get('destino') || 'ruta_principal'; 
         
-        // Actualizar UI
         destinoUI.innerText = `Destino: ${destino.replace(/_/g, ' ').toUpperCase()}`;
 
-        // Lógica WebXR (Hit-Test)
         scene.addEventListener('enter-vr', async () => {
             if (scene.is('ar-mode')) {
-                // Ocultar botón de simulación si entra en AR real
                 simularBtn.style.display = 'none';
-                
                 statusText.innerText = "Buscando piso...";
                 statusText.className = "text-yellow-400";
                 
@@ -173,7 +158,6 @@
 
             const hitTestResults = frame.getHitTestResults(hitTestSource);
             if (hitTestResults.length > 0) {
-                // Piso detectado
                 const hit = hitTestResults[0];
                 const pose = hit.getPose(localSpace);
 
@@ -182,36 +166,31 @@
                 
                 statusText.innerText = "¡Piso detectado!";
                 statusText.className = "text-green-400 font-bold";
-                instructionText.innerText = "Sitúa el círculo azul sobre el piso justo frente al cartel y presiona Iniciar.";
+                instructionText.innerText = "Alinea el celular hacia donde inicia la ruta y presiona Iniciar.";
                 scanIcon.style.display = 'none';
                 placeBtn.classList.remove('hidden');
             } else {
-                // Piso perdido
                 reticle.setAttribute('visible', 'false');
                 placeBtn.classList.add('hidden');
                 statusText.innerText = "Buscando piso...";
                 statusText.className = "text-yellow-400";
                 scanIcon.style.display = 'block';
             }
-
             session.requestAnimationFrame(onXRFrame);
         }
 
-        // --- FUNCIÓN PRINCIPAL: DIBUJAR LA RUTA ---
+        // --- FUNCIÓN MEJORADA: DIBUJAR LA RUTA EN 3D REAL (Soporte Eje Y) ---
         function generarRuta(target, isSimulation = false) {
-            // Obtener el array de coordenadas basado en la URL. 
-            // Si no existe, usamos un fallback simple.
-            const puntos = RUTAS[target] || [{x:0, z:0}, {x:0, z:-5}]; 
-            
-            // Color principal del camino (Azul neón)
+            const puntos = RUTAS[target] || [{x:0, y:0, z:0}, {x:0, y:0, z:-5}]; 
             const colorRuta = '#3b82f6'; 
 
             puntos.forEach((p, index) => {
-                // 1. Crear los "Nodos" (esferas en cada punto de giro)
+                const currentY = p.y || 0; // Lee la altura o asume 0
+
+                // 1. Nodos (Esferas)
                 const node = document.createElement('a-entity');
-                node.setAttribute('position', `${p.x} 0.05 ${p.z}`);
+                node.setAttribute('position', `${p.x} ${currentY + 0.05} ${p.z}`); // Flota sobre su altura específica
                 
-                // Anillo exterior decorativo
                 const ring = document.createElement('a-ring');
                 ring.setAttribute('radius-inner', '0.1');
                 ring.setAttribute('radius-outer', '0.15');
@@ -219,77 +198,78 @@
                 ring.setAttribute('color', colorRuta);
                 ring.setAttribute('material', 'shader: flat;');
                 
-                // Esfera brillante central
                 const sphere = document.createElement('a-sphere');
                 sphere.setAttribute('radius', '0.08');
                 sphere.setAttribute('color', '#60a5fa');
-                // En AR real, el emissive hace que brille aunque haya poca luz real
                 sphere.setAttribute('material', `shader: flat; color: #60a5fa;`); 
                 
                 node.appendChild(ring);
                 node.appendChild(sphere);
                 routeContainer.appendChild(node);
 
-                // 2. Dibujar la línea gruesa entre este punto y el siguiente
+                // 2. Líneas 3D (Se adaptan a la altura y ángulos)
                 if (index < puntos.length - 1) {
                     const next = puntos[index + 1];
+                    const nextY = next.y || 0;
                     
-                    // A-Frame line component no tiene grosor en WebVR/XR nativo.
-                    // En su lugar, calculamos la distancia y rotación y usamos un cilindro tumbado 
-                    // para hacer una línea ancha estilo "cinta pegada al suelo".
-                    
-                    const distance = Math.sqrt(Math.pow(next.x - p.x, 2) + Math.pow(next.z - p.z, 2));
-                    const angle = Math.atan2(next.x - p.x, next.z - p.z) * (180 / Math.PI);
-                    
+                    const dx = next.x - p.x;
+                    const dy = nextY - currentY;
+                    const dz = next.z - p.z;
+
+                    // Matemáticas para rotación e inclinación tridimensional
+                    const distance2D = Math.sqrt(dx*dx + dz*dz);
+                    const distance3D = Math.sqrt(dx*dx + dy*dy + dz*dz);
                     const midX = (p.x + next.x) / 2;
+                    const midY = (currentY + nextY) / 2;
                     const midZ = (p.z + next.z) / 2;
 
+                    // Yaw = Rotación Izquierda/Derecha. Pitch = Rotación Arriba/Abajo
+                    const yaw = Math.atan2(dx, dz) * (180 / Math.PI);
+                    const pitch = Math.atan2(dy, distance2D) * (180 / Math.PI);
+
                     const pathLine = document.createElement('a-cylinder');
-                    pathLine.setAttribute('position', `${midX} 0.02 ${midZ}`);
-                    // Rotar tumbado en el suelo, y luego rotar apuntando al siguiente punto
-                    pathLine.setAttribute('rotation', `90 ${angle} 0`); 
-                    pathLine.setAttribute('radius', '0.05'); // Grosor de la línea
-                    pathLine.setAttribute('height', distance);
+                    pathLine.setAttribute('position', `${midX} ${midY + 0.02} ${midZ}`);
+                    // Se aplica la corrección 3D (Pitch y Yaw)
+                    pathLine.setAttribute('rotation', `${90 - pitch} ${yaw} 0`); 
+                    pathLine.setAttribute('radius', '0.05'); 
+                    pathLine.setAttribute('height', distance3D);
                     pathLine.setAttribute('color', colorRuta);
                     pathLine.setAttribute('material', `shader: flat; opacity: 0.6; transparent: true;`);
                     routeContainer.appendChild(pathLine);
                     
-                    // Flechas animadas sobre la línea
-                    // Ponemos una flecha por cada 2 metros aproximadamente
-                    const numArrows = Math.max(1, Math.floor(distance / 2));
+                    // Flechas
+                    const numArrows = Math.max(1, Math.floor(distance3D / 2));
                     for(let i = 1; i <= numArrows; i++) {
                         const ratio = i / (numArrows + 1);
-                        const arrowX = p.x + (next.x - p.x) * ratio;
-                        const arrowZ = p.z + (next.z - p.z) * ratio;
+                        const arrowX = p.x + dx * ratio;
+                        const arrowY = currentY + dy * ratio;
+                        const arrowZ = p.z + dz * ratio;
                         
                         const arrow = document.createElement('a-entity');
-                        arrow.setAttribute('position', `${arrowX} 0.1 ${arrowZ}`);
-                        // Rotar para que apunte en la dirección de la línea
-                        arrow.setAttribute('rotation', `-90 ${angle + 180} 0`); 
+                        arrow.setAttribute('position', `${arrowX} ${arrowY + 0.1} ${arrowZ}`);
+                        arrow.setAttribute('rotation', `${pitch} ${yaw + 180} 0`); 
                         
-                        // Usamos un triángulo básico para la flecha
                         const triangle = document.createElement('a-triangle');
                         triangle.setAttribute('scale', '0.2 0.3 0.2');
                         triangle.setAttribute('color', '#ffffff');
                         triangle.setAttribute('material', 'shader: flat;');
-                        // Animación de flotación suave
-                        triangle.setAttribute('animation', 'property: position; dir: alternate; dur: 1000; easing: easeInOutSine; loop: true; to: 0 0.1 0; from: 0 0 0');
+                        triangle.setAttribute('animation', `property: position; dir: alternate; dur: 1000; easing: easeInOutSine; loop: true; to: 0 0.1 0; from: 0 0 0`);
                         
                         arrow.appendChild(triangle);
                         routeContainer.appendChild(arrow);
                     }
                 }
 
-                // 3. Indicador de Destino Final
+                // 3. Destino
                 if (index === puntos.length - 1) {
                     const goal = document.createElement('a-entity');
-                    goal.setAttribute('position', `${p.x} 0 ${p.z}`);
+                    goal.setAttribute('position', `${p.x} ${currentY} ${p.z}`);
 
                     const cylinder = document.createElement('a-cylinder');
                     cylinder.setAttribute('radius', '0.5');
                     cylinder.setAttribute('height', '2');
                     cylinder.setAttribute('position', '0 1 0');
-                    cylinder.setAttribute('color', '#10b981'); // Verde
+                    cylinder.setAttribute('color', '#10b981'); 
                     cylinder.setAttribute('material', 'shader: flat; opacity: 0.3; transparent: true; side: double');
                     
                     const text = document.createElement('a-text');
@@ -298,7 +278,6 @@
                     text.setAttribute('position', '0 2.2 0');
                     text.setAttribute('scale', '1.5 1.5 1.5');
                     text.setAttribute('color', '#10b981');
-                    // Hacer que el texto siempre mire al usuario
                     text.setAttribute('look-at', '[camera]');
 
                     goal.appendChild(cylinder);
@@ -308,34 +287,34 @@
             });
         }
 
-        // Lógica del botón para anclar la ruta en AR
+        // --- SOLUCIÓN DE ALINEACIÓN (Heading Fix) ---
         placeBtn.addEventListener('click', () => {
             if (routePlaced) return;
 
-            // Tomamos la posición de la retícula (el suelo que detectó el teléfono)
-            // y anclamos el contenedor de la ruta ahí.
             const position = reticle.getAttribute('position');
+            
+            // Leemos la rotación Y (Yaw) de la cámara en este momento exacto
+            const cameraEl = document.querySelector('[camera]');
+            const cameraHeading = cameraEl.getAttribute('rotation').y;
+            
+            // Anclamos la ruta en la posición del piso, pero ROTADA hacia donde mira el usuario
             routeContainer.setAttribute('position', position);
+            routeContainer.setAttribute('rotation', `0 ${cameraHeading} 0`);
             
             generarRuta(destino);
             
             routePlaced = true;
             reticle.setAttribute('visible', 'false');
             
-            // Actualizar UI
             document.getElementById('instructions').style.display = 'none';
             statusText.innerText = "Ruta fijada. Sigue las flechas.";
             statusText.className = "text-white font-bold";
         });
 
-        // --- LÓGICA DE SIMULACIÓN PARA PC ---
-        // Esto te permite ver la ruta en tu computadora sin tener que abrirlo en el celular
+        // Simulación PC
         simularBtn.addEventListener('click', () => {
             entornoSimulado.setAttribute('visible', 'true');
-            // Mover la cámara un poco hacia atrás y arriba para ver mejor
             document.querySelector('[camera]').setAttribute('position', '0 2 2');
-            
-            // Poner el Punto Cero en el centro del mundo 3D
             routeContainer.setAttribute('position', '0 0 0');
             generarRuta(destino, true);
             
