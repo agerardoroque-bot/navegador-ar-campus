@@ -89,29 +89,49 @@
 
     <script>
         // =====================================================================
-        // --- AÑADE TUS MEDIDAS AQUÍ ---
+        // --- CONFIGURACIÓN DE RUTAS (Actualizado con distancias satelitales) ---
         // =====================================================================
-        // AHORA SOPORTA ALTURA (y). 
-        // Si hay una rampa o escaleras que suben 1 metro, pones y: 1
-        // Si bajan 1 metro, pones y: -1
-        // Si es plano, puedes omitir la 'y' o poner y: 0
-
         const RUTAS = {
             'ruta_principal': [
-                { x: 0, y: 0, z: 0 },          
-                { x: 0, y: 0, z: -105 },       
-                { x: -1.5, y: 0, z: -105 },    
-                { x: -1.5, y: -0.5, z: -125 }, // Ejemplo: En este tramo el terreno bajó medio metro (y: -0.5)
-                { x: -63.5, y: -0.5, z: -125 },   
-                { x: -63.5, y: 0, z: -151 },   // Volvió a subir (y: 0)
-                // Ejemplo de giro irregular (diagonales automáticas): 
-                // El siguiente punto no es recto, cruzamos la plaza en diagonal. 
-                // El código calculará el ángulo exacto para conectar el punto anterior con este.
-                { x: -50.0, y: 0, z: -180 },   
-                { x: -53.0, y: 0, z: -200 }    
+                // 1. Recta inicial desde el Punto 0 (Caminando de frente hacia el Este / 99°)
+                { x: 0, y: 0, z: 0 },
+                { x: 0, y: 0, z: -115 },    // Avance de 115m hasta justo antes de la rotonda
+                
+                // 2. Curva suave a la izquierda (Rodeando la rotonda para enfilar al Norte)
+                { x: -8, y: 0, z: -130 },   // Inicio del giro
+                { x: -20, y: 0, z: -140 },  // Fin de la curva, ya mirando hacia el Norte
+                
+                // 3. Recta hacia el Norte (Caminando paralelo a las áreas verdes y edificios)
+                { x: -105, y: 0, z: -140 }, // Avance largo de 85m por el pasillo central
+                
+                // 4. Curva superior a la derecha (Hacia Dirección de Hoteles)
+                { x: -115, y: 0, z: -148 }, // Inicio del giro a la derecha
+                { x: -120, y: 0, z: -160 }, // Fin de la curva, mirando nuevamente hacia el Este
+                
+                // 5. Recta final hacia el Este (Hasta el destino exacto)
+                { x: -120, y: 0, z: -200 }  // Llegada a la marca de los 302.30 metros
             ]
         };
         // =====================================================================
+
+        // --- RASTREO DE BRÚJULA (ORIENTACIÓN ABSOLUTA) ---
+        let brujulaActual = 0;
+        const RUTA_HEADING = 99; // Rumbo magnético de la primera recta
+
+        // Sensor para Android
+        window.addEventListener('deviceorientationabsolute', (event) => {
+            if (event.alpha !== null) {
+                // Convertimos el eje alpha de Android a grados de brújula estándar
+                brujulaActual = (450 - event.alpha) % 360;
+            }
+        }, true);
+
+        // Sensor de respaldo para iOS
+        window.addEventListener('deviceorientation', (event) => {
+            if (event.webkitCompassHeading) {
+                brujulaActual = event.webkitCompassHeading;
+            }
+        }, true);
 
         const scene = document.querySelector('a-scene');
         const reticle = document.getElementById('reticle');
@@ -166,7 +186,7 @@
                 
                 statusText.innerText = "¡Piso detectado!";
                 statusText.className = "text-green-400 font-bold";
-                instructionText.innerText = "Alinea el celular hacia donde inicia la ruta y presiona Iniciar.";
+                instructionText.innerText = "Toca INICIAR NAVEGACIÓN. La ruta se alineará automáticamente.";
                 scanIcon.style.display = 'none';
                 placeBtn.classList.remove('hidden');
             } else {
@@ -179,17 +199,17 @@
             session.requestAnimationFrame(onXRFrame);
         }
 
-        // --- FUNCIÓN MEJORADA: DIBUJAR LA RUTA EN 3D REAL (Soporte Eje Y) ---
+        // --- DIBUJAR LA RUTA EN 3D REAL ---
         function generarRuta(target, isSimulation = false) {
             const puntos = RUTAS[target] || [{x:0, y:0, z:0}, {x:0, y:0, z:-5}]; 
             const colorRuta = '#3b82f6'; 
 
             puntos.forEach((p, index) => {
-                const currentY = p.y || 0; // Lee la altura o asume 0
+                const currentY = p.y || 0; 
 
                 // 1. Nodos (Esferas)
                 const node = document.createElement('a-entity');
-                node.setAttribute('position', `${p.x} ${currentY + 0.05} ${p.z}`); // Flota sobre su altura específica
+                node.setAttribute('position', `${p.x} ${currentY + 0.05} ${p.z}`); 
                 
                 const ring = document.createElement('a-ring');
                 ring.setAttribute('radius-inner', '0.1');
@@ -207,7 +227,7 @@
                 node.appendChild(sphere);
                 routeContainer.appendChild(node);
 
-                // 2. Líneas 3D (Se adaptan a la altura y ángulos)
+                // 2. Líneas 3D 
                 if (index < puntos.length - 1) {
                     const next = puntos[index + 1];
                     const nextY = next.y || 0;
@@ -216,20 +236,17 @@
                     const dy = nextY - currentY;
                     const dz = next.z - p.z;
 
-                    // Matemáticas para rotación e inclinación tridimensional
                     const distance2D = Math.sqrt(dx*dx + dz*dz);
                     const distance3D = Math.sqrt(dx*dx + dy*dy + dz*dz);
                     const midX = (p.x + next.x) / 2;
                     const midY = (currentY + nextY) / 2;
                     const midZ = (p.z + next.z) / 2;
 
-                    // Yaw = Rotación Izquierda/Derecha. Pitch = Rotación Arriba/Abajo
                     const yaw = Math.atan2(dx, dz) * (180 / Math.PI);
                     const pitch = Math.atan2(dy, distance2D) * (180 / Math.PI);
 
                     const pathLine = document.createElement('a-cylinder');
                     pathLine.setAttribute('position', `${midX} ${midY + 0.02} ${midZ}`);
-                    // Se aplica la corrección 3D (Pitch y Yaw)
                     pathLine.setAttribute('rotation', `${90 - pitch} ${yaw} 0`); 
                     pathLine.setAttribute('radius', '0.05'); 
                     pathLine.setAttribute('height', distance3D);
@@ -260,7 +277,7 @@
                     }
                 }
 
-                // 3. Destino
+                // 3. Destino Final
                 if (index === puntos.length - 1) {
                     const goal = document.createElement('a-entity');
                     goal.setAttribute('position', `${p.x} ${currentY} ${p.z}`);
@@ -287,19 +304,19 @@
             });
         }
 
-        // --- SOLUCIÓN DE ALINEACIÓN (Heading Fix) ---
+        // --- SOLUCIÓN DE ALINEACIÓN EXACTA (BRÚJULA + CÁMARA) ---
         placeBtn.addEventListener('click', () => {
             if (routePlaced) return;
 
             const position = reticle.getAttribute('position');
-            
-            // Leemos la rotación Y (Yaw) de la cámara en este momento exacto
             const cameraEl = document.querySelector('[camera]');
-            const cameraHeading = cameraEl.getAttribute('rotation').y;
+            const cameraY = cameraEl.getAttribute('rotation').y;
             
-            // Anclamos la ruta en la posición del piso, pero ROTADA hacia donde mira el usuario
+            // Calculamos hacia dónde debe rotar el mapa 3D para alinearse con los 99° reales
+            const rotacionFinalY = (cameraY + brujulaActual) - RUTA_HEADING;
+            
             routeContainer.setAttribute('position', position);
-            routeContainer.setAttribute('rotation', `0 ${cameraHeading} 0`);
+            routeContainer.setAttribute('rotation', `0 ${rotacionFinalY} 0`);
             
             generarRuta(destino);
             
@@ -307,7 +324,7 @@
             reticle.setAttribute('visible', 'false');
             
             document.getElementById('instructions').style.display = 'none';
-            statusText.innerText = "Ruta fijada. Sigue las flechas.";
+            statusText.innerText = "Ruta fijada magnéticamente. Sigue las flechas.";
             statusText.className = "text-white font-bold";
         });
 
