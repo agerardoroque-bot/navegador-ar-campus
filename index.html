@@ -22,6 +22,7 @@
             <div class="text-left">
                 <h1 class="text-xl md:text-2xl font-bold uppercase tracking-widest text-blue-400">Navegador AR</h1>
                 <p id="destino-ui" class="text-sm font-medium text-gray-300">Destino: Cargando...</p>
+                <p id="compass-debug" class="text-xs font-mono text-pink-400 mt-1">Brújula: Esperando sensor...</p>
             </div>
             <div class="bg-black/50 px-3 py-1 rounded-full text-xs border border-white/20">
                 <span id="status" class="text-yellow-400">Escaneando entorno...</span>
@@ -83,43 +84,55 @@
             'ruta_principal': [
                 // 1. Recta inicial desde el Punto 0
                 { x: 0, y: 0, z: 0 },
-                { x: 0, y: 0, z: -115 },    // Avance de 115m hasta justo antes de la rotonda
+                { x: 0, y: 0, z: -115 },    
                 
                 // 2. Curva suave a la izquierda (Rodeando la rotonda)
                 { x: -8, y: 0, z: -130 },   
                 { x: -20, y: 0, z: -140 },  
                 
                 // 3. Recta hacia el Norte 
-                { x: -105, y: 0, z: -140 }, // Avance largo de 85m por el pasillo central
+                { x: -105, y: 0, z: -140 }, 
                 
                 // 4. Curva superior a la derecha (Hacia Dirección de Hoteles)
                 { x: -115, y: 0, z: -148 }, 
                 { x: -120, y: 0, z: -160 }, 
                 
                 // 5. Recta final 
-                { x: -120, y: 0, z: -200 }  // Llegada a la marca de los 302.30 metros
+                { x: -120, y: 0, z: -200 }  
             ]
         };
         // =====================================================================
 
-        // --- RASTREO DE BRÚJULA (ORIENTACIÓN ABSOLUTA CORREGIDA) ---
+        // --- RASTREO DE BRÚJULA (ORIENTACIÓN ABSOLUTA MEJORADA) ---
         let brujulaActual = 0;
         
-        // ¡Actualizado a los 124 grados exactos de la brújula física!
+        // Ajuste fino para centrar en la banqueta
         const RUTA_HEADING = 119; 
+        const compassDebug = document.getElementById('compass-debug');
 
-        // Sensor para Android
+        function actualizarBrujula(grados) {
+            brujulaActual = grados;
+            compassDebug.innerText = `Brújula: ${Math.round(grados)}°`;
+        }
+
+        // Sensor Principal (Para tu Motorola / Android)
         window.addEventListener('deviceorientationabsolute', (event) => {
             if (event.alpha !== null) {
-                // CORRECCIÓN MATEMÁTICA: La brújula estándar es 360 menos alpha
-                brujulaActual = (360 - event.alpha) % 360;
+                actualizarBrujula((360 - event.alpha) % 360);
             }
         }, true);
 
-        // Sensor de respaldo para iOS
+        // Sensor de Respaldo agresivo (Atrapa datos si el primero falla)
         window.addEventListener('deviceorientation', (event) => {
             if (event.webkitCompassHeading) {
-                brujulaActual = event.webkitCompassHeading;
+                // Para usuarios de iPhone
+                actualizarBrujula(event.webkitCompassHeading);
+            } else if (event.absolute === true && event.alpha !== null) {
+                // Si Android manda la brújula por este canal secundario
+                actualizarBrujula((360 - event.alpha) % 360);
+            } else if (brujulaActual === 0 && event.alpha !== null) {
+                // Último recurso por si la brújula absoluta está apagada
+                actualizarBrujula((360 - event.alpha) % 360);
             }
         }, true);
 
@@ -302,7 +315,7 @@
             const cameraEl = document.querySelector('[camera]');
             const cameraY = cameraEl.getAttribute('rotation').y;
             
-            // Cálculo corregido para alinear el mapa 3D con los 124° reales
+            // Calculamos hacia dónde debe rotar el mapa 3D para alinearse con los 119° reales
             const rotacionFinalY = (cameraY + brujulaActual) - RUTA_HEADING;
             
             routeContainer.setAttribute('position', position);
