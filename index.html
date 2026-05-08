@@ -102,16 +102,17 @@
         };
         // =====================================================================
 
-        // --- RASTREO DE BRÚJULA (ORIENTACIÓN ABSOLUTA) ---
+        // --- RASTREO DE BRÚJULA (ORIENTACIÓN ABSOLUTA CORREGIDA) ---
         let brujulaActual = 0;
         
-        // ¡AQUÍ ESTÁ LA MAGIA! Corregido a los 130 grados exactos de la flecha naranja
-        const RUTA_HEADING = 130; 
+        // ¡Actualizado a los 124 grados exactos de la brújula física!
+        const RUTA_HEADING = 124; 
 
         // Sensor para Android
         window.addEventListener('deviceorientationabsolute', (event) => {
             if (event.alpha !== null) {
-                brujulaActual = (450 - event.alpha) % 360;
+                // CORRECCIÓN MATEMÁTICA: La brújula estándar es 360 menos alpha
+                brujulaActual = (360 - event.alpha) % 360;
             }
         }, true);
 
@@ -301,7 +302,7 @@
             const cameraEl = document.querySelector('[camera]');
             const cameraY = cameraEl.getAttribute('rotation').y;
             
-            // Calculamos hacia dónde debe rotar el mapa 3D para alinearse con los 130° reales
+            // Cálculo corregido para alinear el mapa 3D con los 124° reales
             const rotacionFinalY = (cameraY + brujulaActual) - RUTA_HEADING;
             
             routeContainer.setAttribute('position', position);
