@@ -4,9 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Navegador AR Universitario</title>
-    <!-- A-Frame Library -->
     <script src="https://aframe.io/releases/1.4.2/aframe.min.js"></script>
-    <!-- Tailwind CSS para la UI -->
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         body { margin: 0; overflow: hidden; font-family: sans-serif; background-color: #1a202c; }
@@ -19,9 +17,7 @@
 </head>
 <body>
 
-    <!-- Interfaz de Usuario (UI) -->
     <div id="overlay" class="ar-ui inset-0 flex flex-col items-center justify-between p-6 text-white text-center">
-        <!-- Encabezado -->
         <div class="mt-4 w-full flex justify-between items-start px-4">
             <div class="text-left">
                 <h1 class="text-xl md:text-2xl font-bold uppercase tracking-widest text-blue-400">Navegador AR</h1>
@@ -32,7 +28,6 @@
             </div>
         </div>
 
-        <!-- Instrucciones Centrales -->
         <div id="instructions" class="p-6 w-full max-w-md mb-12 shadow-2xl">
             <div class="flex justify-center mb-4">
                 <svg id="scan-icon" class="w-12 h-12 text-blue-400 animate-pulse" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z"></path></svg>
@@ -43,20 +38,17 @@
                 INICIAR NAVEGACIÓN
             </button>
             
-            <!-- Botón de simulación -->
             <button id="simular-btn" class="interactive w-full mt-4 bg-gray-700 hover:bg-gray-600 text-white font-bold py-2 px-8 rounded-xl text-sm">
                 (PC) Simular AR
             </button>
         </div>
         
-        <!-- Aviso para iOS -->
         <div id="ios-warning" class="hidden interactive bg-red-900/90 border border-red-500 p-4 rounded-xl mb-4 text-sm max-w-md shadow-lg">
             <p class="font-bold text-red-200 mb-1">Aviso para iOS</p>
             <p class="text-red-100">Safari no soporta AR por defecto. Por favor descarga la app <b>WebXR Viewer</b> de Mozilla para usar este mapa.</p>
         </div>
     </div>
 
-    <!-- Escena A-Frame -->
     <a-scene 
         webxr="requiredFeatures: hit-test, local-floor; optionalFeatures: dom-overlay; overlayElement: #overlay;"
         xr-mode-ui="XRMode: ar"
@@ -66,20 +58,16 @@
             <img id="glow" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==" crossorigin="anonymous">
         </a-assets>
 
-        <!-- Cámara -->
         <a-entity camera position="0 1.6 0"></a-entity>
 
-        <!-- Retícula de selección -->
         <a-entity id="reticle" visible="false">
             <a-ring color="#3b82f6" radius-inner="0.1" radius-outer="0.15" rotation="-90 0 0" material="shader: flat; opacity: 0.8;">
                 <a-circle color="#60a5fa" radius="0.05" animation="property: scale; to: 1.5 1.5 1.5; dir: alternate; dur: 800; loop: true"></a-circle>
             </a-ring>
         </a-entity>
 
-        <!-- Contenedor de la Ruta -->
         <a-entity id="route-container"></a-entity>
 
-        <!-- Entorno simulado -->
         <a-entity id="entorno-simulado" visible="false">
             <a-plane position="0 0 0" rotation="-90 0 0" width="30" height="30" color="#2d3748"></a-plane>
             <a-grid position="0 0.01 0"></a-grid>
@@ -93,22 +81,22 @@
         // =====================================================================
         const RUTAS = {
             'ruta_principal': [
-                // 1. Recta inicial desde el Punto 0 (Caminando de frente hacia el Este / 99°)
+                // 1. Recta inicial desde el Punto 0
                 { x: 0, y: 0, z: 0 },
                 { x: 0, y: 0, z: -115 },    // Avance de 115m hasta justo antes de la rotonda
                 
-                // 2. Curva suave a la izquierda (Rodeando la rotonda para enfilar al Norte)
-                { x: -8, y: 0, z: -130 },   // Inicio del giro
-                { x: -20, y: 0, z: -140 },  // Fin de la curva, ya mirando hacia el Norte
+                // 2. Curva suave a la izquierda (Rodeando la rotonda)
+                { x: -8, y: 0, z: -130 },   
+                { x: -20, y: 0, z: -140 },  
                 
-                // 3. Recta hacia el Norte (Caminando paralelo a las áreas verdes y edificios)
+                // 3. Recta hacia el Norte 
                 { x: -105, y: 0, z: -140 }, // Avance largo de 85m por el pasillo central
                 
                 // 4. Curva superior a la derecha (Hacia Dirección de Hoteles)
-                { x: -115, y: 0, z: -148 }, // Inicio del giro a la derecha
-                { x: -120, y: 0, z: -160 }, // Fin de la curva, mirando nuevamente hacia el Este
+                { x: -115, y: 0, z: -148 }, 
+                { x: -120, y: 0, z: -160 }, 
                 
-                // 5. Recta final hacia el Este (Hasta el destino exacto)
+                // 5. Recta final 
                 { x: -120, y: 0, z: -200 }  // Llegada a la marca de los 302.30 metros
             ]
         };
@@ -116,12 +104,13 @@
 
         // --- RASTREO DE BRÚJULA (ORIENTACIÓN ABSOLUTA) ---
         let brujulaActual = 0;
-        const RUTA_HEADING = 99; // Rumbo magnético de la primera recta
+        
+        // ¡AQUÍ ESTÁ LA MAGIA! Corregido a los 130 grados exactos de la flecha naranja
+        const RUTA_HEADING = 130; 
 
         // Sensor para Android
         window.addEventListener('deviceorientationabsolute', (event) => {
             if (event.alpha !== null) {
-                // Convertimos el eje alpha de Android a grados de brújula estándar
                 brujulaActual = (450 - event.alpha) % 360;
             }
         }, true);
@@ -312,7 +301,7 @@
             const cameraEl = document.querySelector('[camera]');
             const cameraY = cameraEl.getAttribute('rotation').y;
             
-            // Calculamos hacia dónde debe rotar el mapa 3D para alinearse con los 99° reales
+            // Calculamos hacia dónde debe rotar el mapa 3D para alinearse con los 130° reales
             const rotacionFinalY = (cameraY + brujulaActual) - RUTA_HEADING;
             
             routeContainer.setAttribute('position', position);
